@@ -1,0 +1,159 @@
+<form stylesheet="sha.css,dashboard2.css" script="hide.js">
+  <label>My New</label>
+  <fieldset submitButton="false">
+    <input type="time" token="ok">
+      <label>ok</label>
+      <default>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+       <html>
+                <h2>Sample Description</h2>
+                <p>This is some sample description that only shows up if you click on the "Show Details" button.</p>
+                <button class="btn" data-unset-token="start1">Hide Details</button>
+            </html>
+      <title>$start$ and $end$   and $start1$ and $end1$</title>
+      <table>
+        <search>
+          <query>|stats count | eval start_time="07-22-2017 21:50:00" ,end_time="07-24-2017 21:52:00", app_nm="shasha"| table app_nm,start_time,end_time</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+          <sampleRatio>1</sampleRatio>
+        </search>
+        <option name="count">20</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">row</option>
+        <option name="percentagesRow">false</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+        <drilldown>
+          <set token="start">$row.start_time$</set>
+          <set token="end">$row.end_time$</set>
+          <eval token="start1">strptime($start$,"%m-%d-%Y %H:%M:%S")</eval>
+          <eval token="end1">strptime($end$,"%m-%d-%Y %H:%M:%S")</eval>
+        </drilldown>
+      </table>
+    </panel>
+    <panel depends="$start1$">
+      <chart>
+        <search>
+          <query>index="_internal"    | timechart count</query>
+          <earliest>$start1$</earliest>
+          <latest>$end1$</latest>
+        </search>
+        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
+        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
+        <option name="charting.axisTitleX.visibility">visible</option>
+        <option name="charting.axisTitleY.visibility">visible</option>
+        <option name="charting.axisTitleY2.visibility">visible</option>
+        <option name="charting.axisX.scale">linear</option>
+        <option name="charting.axisY.scale">linear</option>
+        <option name="charting.axisY2.enabled">0</option>
+        <option name="charting.axisY2.scale">inherit</option>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.bubbleMaximumSize">50</option>
+        <option name="charting.chart.bubbleMinimumSize">10</option>
+        <option name="charting.chart.bubbleSizeBy">area</option>
+        <option name="charting.chart.nullValueMode">gaps</option>
+        <option name="charting.chart.showDataLabels">none</option>
+        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
+        <option name="charting.chart.stackMode">default</option>
+        <option name="charting.chart.style">shiny</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.layout.splitSeries">0</option>
+        <option name="charting.layout.splitSeries.allowIndependentYRanges">0</option>
+        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="trellis.enabled">0</option>
+        <option name="trellis.scales.shared">1</option>
+        <option name="trellis.size">medium</option>
+      </chart>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>$ok.earliest$   and $ok.latest$</title>
+        <search>
+          <query>index="_internal"    | timechart count</query>
+          <earliest>$ok.earliest$</earliest>
+          <latest>$ok.latest$</latest>
+          <sampleRatio>1</sampleRatio>
+        </search>
+        <option name="count">20</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="percentagesRow">false</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+    <panel>
+      <table>
+        <search>
+          <query>index="_internal"    | timechart count</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+          <sampleRatio>1</sampleRatio>
+        </search>
+        <option name="count">20</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="drilldown">none</option>
+        <option name="percentagesRow">false</option>
+        <option name="rowNumbers">false</option>
+        <option name="totalsRow">false</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+</form>
+
+
+require(['jquery', 'underscore', 'splunkjs/mvc', 'util/console'], function($, _, mvc, console) {
+    function setToken(name, value) {
+        console.log('Setting Token %o=%o', name, value);
+        var defaultTokenModel = mvc.Components.get('default');
+        if (defaultTokenModel) {
+            defaultTokenModel.set(name, value);
+        }
+        var submittedTokenModel = mvc.Components.get('submitted');
+        if (submittedTokenModel) {
+            submittedTokenModel.set(name, value);
+        }
+    }
+    $('.dashboard-body').on('click', '[data-set-token],[data-unset-token],[data-token-json]', function(e) {
+        e.preventDefault();
+        var target = $(e.currentTarget);
+        var setTokenName = target.data('set-token');
+        if (setTokenName) {
+            setToken(setTokenName, target.data('value'));
+        }
+        var unsetTokenName = target.data('unset-token');
+        if (unsetTokenName) {
+            setToken(unsetTokenName, undefined);
+        }
+        var tokenJson = target.data('token-json');
+        if (tokenJson) {
+            try {
+                if (_.isObject(tokenJson)) {
+                    _(tokenJson).each(function(value, key) {
+                        if (value == null) {
+                            // Unset the token
+                            setToken(key, undefined);
+                        } else {
+                            setToken(key, value);
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn('Cannot parse token JSON: ', e);
+            }
+        }
+    });
+});
