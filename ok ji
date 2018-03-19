@@ -1,0 +1,190 @@
+import xml.etree.ElementTree as etree
+import sys
+import os
+import json
+v_global=""
+v_array=""
+xml_path=[]
+main_key=0
+key=0
+sample_count=sys.argv[2]
+file_name=sys.argv[1]
+temp_field=[]
+list_parent=[]
+prev_v_global=""
+def extract_attributes(att,v_globalf,main_keyf,keyf):
+  for i in att:
+    j=i
+    if "}" in j:
+      j=i.split('}',1)[1]
+    xml_path.append(v_globalf+"/"+j)
+
+
+def create_field(field):
+
+  global temp_field
+  if "/" in field:
+    head, tail = os.path.split(field)
+  elif "/" not in field:
+    tail = field
+
+  if tail not in temp_field:
+    temp_field.append(tail)
+    return(tail)
+  elif tail in temp_field:
+    if "/" in field:
+      xyz=rreplace(field,"/","_",1)
+    else:
+      xyz=field+"_1"
+    c=create_field(xyz)
+    return(c)
+
+class InvalidMessageException(Exception):
+     pass
+
+class InvalidFieldException(Exception):
+     pass
+
+
+def rreplace(s, old, new, occurrence):
+  li = s.rsplit(old, occurrence)
+  return new.join(li)
+
+vector_base =[]
+
+def extract_path(xml_file,prev_v_global):
+  global v_global
+  global list_parent
+  global vector_base
+  v_global=""
+  for event, elem in etree.iterparse(xml_file, events=('start', 'end')):
+    if event == 'start':
+      IND="START"
+      tag=elem.tag
+      if "}" in elem.tag:
+        tag=elem.tag.split('}', 1)[1]
+      v_global=v_global+"/"+tag
+      if v_global == prev_v_global:
+        list_parent.append(v_global)
+        list_parent.append(v_global)
+        vector_base.append(v_global)
+      xml_path.append(v_global)
+      if len(elem.attrib) != 0 :
+        extract_attributes(elem.attrib,v_global,main_key,key)
+      prev_v_global=v_global
+    elif event == 'end':
+      if IND!="START":
+        list_parent.append(v_global)
+      tag1=elem.tag
+      if "}" in elem.tag:
+        tag1=elem.tag.split('}', 1)[1]
+      v_global = v_global[:-len(tag1)-1]
+      IND="END"
+
+sampling=0
+file_object  = open(file_name,'r')
+for file_content in file_object:
+  #print file_content
+  temp_xml = open("temp", "w")
+  temp_xml.write(file_content)
+  temp_xml.close()
+  v_global=""
+  if sampling < int(sample_count):
+    try:
+      x = etree.fromstring(file_content)
+      extract_path('temp',prev_v_global)
+    except:
+      pass
+  else:
+    break
+  sampling=sampling+1
+
+
+unique_list_parent=list(set(list_parent))
+prev_path=""
+end_parent=""
+base_elements=[]
+base_elements.append("/"+unique_list_parent[0].split('/')[1])
+
+for i in unique_list_parent:
+  head, tail = os.path.split(i)
+  end_parent="unset"
+  prev_path=""
+  for j in list_parent:
+    if ( prev_path == j and end_parent != "set" ):
+      base_elements.append(i)
+    if ( j == head ):
+      end_parent="set"
+    if ( i == j ):
+      prev_path=i
+      end_parent="unset"
+
+base_elements=list(set(base_elements))
+base_elements.sort(key=len)
+base_elements=list(reversed(base_elements))
+
+#Added for handling Vector Base Elements
+xml_path.extend(vector_base)
+
+xml_path=list(set(xml_path))
+xml_path.sort()
+
+for c in unique_list_parent:
+  if c not in vector_base:
+    xml_path.remove(c)
+
+
+record_format_list={}
+n_record_format_list={}
+v_record_format={}
+bkp_xml_path=xml_path
+for k in base_elements:
+  v_record_format={}
+  xml_path=bkp_xml_path
+  bkp_xml_path=[]
+  temp_field=[]
+  for n in xml_path:
+    if k in n:
+      fName=create_field(n.replace(k+"/","").lower()).replace(".","_")
+      v_record_format[fName]=n
+    else:
+      bkp_xml_path.append(n)
+  record_format_list[k]=v_record_format
+
+
+v_key=""
+counter=0
+base_key=[]
+key_list=[]
+for i in base_elements:
+  v_key=""
+  f_key=i
+  counter=0
+  for j in base_elements:
+    counter=counter+1
+    if j in i:
+      head, tail = os.path.split(j)
+      v_key=tail.replace('.','_').lower()+"_seq_num"+str(counter)
+      record_format_list[i][v_key]=0
+      key_list.append(v_key)
+      f_key=f_key+"|"+v_key
+  base_key.append(f_key)
+
+
+
+base_element = open("base_element.txt", "w")
+for j in base_key:
+  base_element.write(j+"\n")
+base_element.close()
+
+
+key_list=list(set(key_list))
+keys = open("keys.txt", "w")
+
+for j in key_list:
+  keys.write(j+"\n")
+keys.close()
+
+record_format = open("record_format.txt", "w")
+record_format.write(json.dumps(record_format_list)+'\n')
+record_format.close()
