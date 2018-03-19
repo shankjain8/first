@@ -188,3 +188,485 @@ keys.close()
 record_format = open("record_format.txt", "w")
 record_format.write(json.dumps(record_format_list)+'\n')
 record_format.close()
+
+
+from __future__ import print_function
+import tempfile
+import time
+import sys
+import os
+import argparse
+import traceback
+import logging
+import xml.etree.ElementTree as etree
+from datetime import datetime
+import json
+from pyspark import SparkContext, SparkConf,StorageLevel
+from pyspark.sql import HiveContext
+from pyspark.sql import Row
+from pyspark.sql.functions import *
+from pyspark.sql import  SQLContext
+
+
+v_global=""
+prev_v_global=""
+base_elements=[]
+fp = open('base_element.txt')
+base_element_key = {}
+lines = fp.read().split("\n")
+fp.close()
+
+
+fp = open('keys.txt')
+element_key = {}
+kline = fp.read().split("\n")
+fp.close()
+
+fp = open('record_format.txt')
+record_format_key = {}
+rline={}
+rline = fp.read()
+data = json.load(open('record_format.txt'))
+fp.close()
+
+temp_field=[]
+class InvalidMessageException(Exception):
+     pass
+
+class InvalidFieldException(Exception):
+     pass
+
+def create_field(field):
+
+  global temp_field
+  if "/" in field:
+    head, tail = os.path.split(field)
+  elif "/" not in field:
+    tail = field
+
+  if tail not in temp_field:
+    temp_field.append(tail)
+    return(tail)
+  elif tail in temp_field:
+    if "/" in field:
+      xyz=rreplace(field,"/","_",1)
+    else:
+      xyz=field+"_1"
+    c=create_field(xyz)
+    return(c)
+
+
+def rreplace(s, old, new, occurrence):
+  li = s.rsplit(old, occurrence)
+  return new.join(li)
+
+
+def normalize(key):
+    key = key.lower()
+    for k in schema.keys():
+        if k.lower() == key:
+            return k
+    return None
+
+def extract_attributes(att,v_globalf):
+  for i in att:
+    j=i
+    if "}" in j:
+      j=i.split('}',1)[1]
+    current_vdata[v_globalf+"/"+j]=att[i]
+
+def create_data1(base):
+  tempp={}
+  if base in base_elements:
+    rec=data[base]
+    for j in rec:
+      rec[j]=str(current_vdata.get(j,""))
+      if "seq_num" in j:
+        rec[j]=str(element_key[j])
+      if not "seq_num" in j:
+        rec[j]=str(current_vdata.get(j,""))
+        current_vdata.pop(j,None)
+    element_key[base_element_key[base]]=element_key[base_element_key[base]]+1
+    return(str(rec))
+
+def reset_keyss(base):
+  global element_key
+  global reset_counter
+  if base in reset_counter:
+    for i in reset_counter[base].split("|"):
+      if "seq_num" in i:
+        element_key[i]=1
+
+def create_data(base):
+  if base in base_elements:
+    rec=data[base]
+    k={}
+    l={}
+    for j in rec:
+      if "seq_num" in j:
+#        l[j]=repr(element_key[j])
+        l[j]=str(element_key[j]).encode("utf-8")
+      if not "seq_num" in j:
+        xPath=rec[j.encode('utf-8')].encode('utf-8')
+        if current_vdata.get(xPath,"") is not None:
+          l[j]=current_vdata.get(xPath,"").encode("utf-8")
+        else:
+          l[j]="".encode("utf-8")
+        current_vdata.pop(xPath,None)
+    len_seq_key=str(len(element_key))
+    element_key[base_element_key[base]]=element_key[base_element_key[base]]+1
+    reset_keyss(base)
+    return((json.dumps(l).encode('utf-8')))
+
+
+
+
+def add_missing_columns(row):
+    for field in schema:
+        if field not in row:
+            row[field] = None
+
+
+
+def nonblank_lines(f):
+    for l in f:
+        line = l.rstrip()
+        if line:
+            yield line
+def reset_key(element_key):
+  length_seq_key=str(len(element_key))
+  for i in element_key:
+    if length_seq_key not in i:
+      element_key[i]=1
+  return element_key
+
+def processRecord(record):
+
+  try:
+    x = etree.fromstring(record.encode("utf-8"))
+    x = None
+    global element_key
+    key_len_seq=str(len(element_key))
+    epoch_time=time.time()
+    epoch_time=epoch_time-int(epoch_time)
+    for i in element_key:
+      if key_len_seq in i:
+        element_key[i]=int(element_key[i])+epoch_time
+    incrementCounter()
+    f = tempfile.NamedTemporaryFile(delete=True)
+    a=""
+    f.write(record.encode("utf-8"))
+    f.flush()
+    element_key=reset_key(element_key)
+    global v_global
+    global prev_v_global
+    for event, elem in etree.iterparse(f.name, events=('start', 'end')):
+      if event == 'start':
+        IND="START"
+        tag=elem.tag
+        if "}" in elem.tag:
+          tag=elem.tag.split('}', 1)[1]
+        v_global=v_global+"/"+tag
+#        if v_global == prev_v_global:
+#          igh=create_data(v_global)
+#          if igh:
+#            a=a+v_global+'=='+igh.encode("utf-8")+"||"
+
+        current_vdata[v_global]=elem.text
+        if len(elem.attrib) != 0 :
+          extract_attributes(elem.attrib,v_global)
+        prev_v_global=v_global
+      elif event == 'end':
+        if (IND!="START") or (v_global in base_elements):
+          igh=create_data(v_global)
+          if igh:
+            a=a+v_global+'=='+igh.encode("utf-8")+"||"
+        tag1=elem.tag
+        if "}" in elem.tag:
+          tag1=elem.tag.split('}', 1)[1]
+        v_global = v_global[:-len(tag1)-1]
+        IND="END"
+    f.close
+    for i in current_vdata:
+      if not current_vdata[i]:
+        a=a+'missing_tag=='+i.encode("utf-8")+"||"
+#        print(i)
+#        print(current_vdata[i])
+    return (a)
+  except:
+    return('malform_xml=={"record":'+json.dumps(record)+'}||'.encode('utf-8'))
+    #pass
+    #print(record)
+    #return('malform_xml=={"record":'+json.dumps(record)+'}||')
+    #pass
+
+
+def incrementCounter():
+    counterAccum.add(1)
+
+
+def handle_malformed_records(sc, args):
+    global data
+    global element_key
+    key_len_seq=str(len(element_key))
+    epoch_time=time.time()
+    epoch_time=epoch_time-int(epoch_time)
+
+    sqlContext = HiveContext(sc)
+    sqlContext1=SQLContext(sc)
+    LOGGER.info("IAMHERE")
+    records = sc.textFile(",".join(args.input)).map(processRecord).filter(bool).flatMap(lambda x: x.split("||")).filter(bool).map(lambda word: (word.split("==")[0].encode('utf-8'),word.split("==")[1].encode('utf-8')))
+    df = sqlContext1.createDataFrame(records,['key','value'])
+
+    df.filter(df["key"] == "missing_tag").select('value').distinct().write.mode("overwrite").format("text").save(args.output+"/missing_tag")
+
+#    df.write.mode("overwrite").format("parquet").option("sep", "||").save(args.output+"/temp")
+    df.write.mode("append").format("json").save(args.output+"/temp")
+#    df.write.mode("append").format("json").save(args.output+"/json")
+
+
+for i in nonblank_lines(lines):
+        base_element_key[i.split("|")[0]]=i.split("|")[1]
+        base_elements.append(i.split("|")[0])
+
+for i in nonblank_lines(kline):
+        element_key[i.split("|")[0]]=1
+
+reset_counter={}
+for i in lines:
+  value=""
+  if len(i.split("|")) > 2:
+    for j in lines:
+      if (i != j) and (i.split("|")[0] in j) :
+        value=value+j.split("|")[1]+"|"
+        reset_counter[i.split("|")[0]]=value
+
+
+current_vdata={}
+rec=""
+
+
+if __name__ == "__main__":
+    conf = SparkConf().setAppName("PySpark - Parsing log files.")
+    sc = SparkContext(conf=conf)
+    counterAccum = sc.accumulator(0)
+    log4jLogger = sc._jvm.org.apache.log4j
+    LOGGER = log4jLogger.LogManager.getLogger(__name__)
+    LOGGER.info("pyspark script logger initialized")
+    parser = argparse.ArgumentParser(prog='Log Parser', description='Parsing splunk logs.')
+    parser.add_argument('--output', nargs='?', default='output', help='Location of output directory.')
+    parser.add_argument('--input', nargs='*', default='input', help='Location of input directories.')
+    args = parser.parse_args(sys.argv[1:])
+    handle_malformed_records(sc, args)
+    sc.stop()
+===============================================================================
+
+
+import xml.etree.ElementTree as etree
+import sys
+import os
+import json
+v_global=""
+v_array=""
+xml_path=[]
+main_key=0
+key=0
+sample_count=sys.argv[2]
+file_name=sys.argv[1]
+temp_field=[]
+#IND=""
+list_parent=[]
+prev_v_global=""
+def extract_attributes(att,v_globalf,main_keyf,keyf):
+  for i in att:
+    j=i
+    if "}" in j:
+      j=i.split('}',1)[1]
+      #if test in v_globalf:
+        #print (str(main_keyf)+"@"+str(keyf)+"|"+v_globalf+"/"+j+"|"+att[i])
+    xml_path.append(v_globalf+"/"+j)
+
+
+def create_field(field):
+
+  global temp_field
+  if "/" in field:
+    head, tail = os.path.split(field)
+  elif "/" not in field:
+    tail = field
+
+  if tail not in temp_field:
+    temp_field.append(tail)
+    return(tail)
+  elif tail in temp_field:
+    if "/" in field:
+      xyz=rreplace(field,"/","_",1)
+    else:
+      xyz=field+"_1"
+    c=create_field(xyz)
+    return(c)
+
+class InvalidMessageException(Exception):
+     pass
+
+class InvalidFieldException(Exception):
+     pass
+
+
+def rreplace(s, old, new, occurrence):
+  li = s.rsplit(old, occurrence)
+  return new.join(li)
+
+def extract_path(xml_file,prev_v_global):
+  global v_global
+  global list_parent
+  #global prev_v_global
+  v_global=""
+  for event, elem in etree.iterparse(xml_file, events=('start', 'end')):
+    if event == 'start':
+      IND="START"
+      tag=elem.tag
+      if "}" in elem.tag:
+        tag=elem.tag.split('}', 1)[1]
+      v_global=v_global+"/"+tag
+      if v_global == prev_v_global:
+        list_parent.append(v_global)
+        list_parent.append(v_global)
+      #if test in v_global:
+        #print (str(main_key)+"@"+str(key)+"|"+v_global+"|"+elem.tag)
+      xml_path.append(v_global)
+      if len(elem.attrib) != 0 :
+        extract_attributes(elem.attrib,v_global,main_key,key)
+      prev_v_global=v_global
+    elif event == 'end':
+      if IND!="START":
+        list_parent.append(v_global)
+      tag1=elem.tag
+      if "}" in elem.tag:
+        tag1=elem.tag.split('}', 1)[1]
+      v_global = v_global[:-len(tag1)-1]
+      IND="END"
+
+sampling=0
+file_object  = open(file_name,'r')
+for file_content in file_object:
+  #print file_content
+  temp_xml = open("temp", "w")
+  temp_xml.write(file_content)
+  temp_xml.close()
+  v_global=""
+  if sampling < int(sample_count):
+    try:
+      x = etree.fromstring(file_content)
+      extract_path('temp',prev_v_global)
+    except:
+    #  print(file_content)
+      pass
+  else:
+    break
+  sampling=sampling+1
+
+#Below provides us with a list of
+#print list_parent
+#print xml_path
+
+unique_list_parent=list(set(list_parent))
+prev_path=""
+end_parent=""
+base_elements=[]
+base_elements.append("/"+unique_list_parent[0].split('/')[1])
+
+for i in unique_list_parent:
+  head, tail = os.path.split(i)
+  #print (head,tail,i)
+  end_parent="unset"
+  prev_path=""
+  for j in list_parent:
+    #print (j)
+    if ( prev_path == j and end_parent != "set" ):
+      base_elements.append(i)
+    if ( j == head ):
+      end_parent="set"
+    if ( i == j ):
+      prev_path=i
+      end_parent="unset"
+
+base_elements=list(set(base_elements))
+base_elements.sort(key=len)
+base_elements=list(reversed(base_elements))
+xml_path=list(set(xml_path))
+xml_path.sort()
+
+for c in unique_list_parent:
+  xml_path.remove(c)
+
+#print xml_path
+#print base_elements
+
+record_format_list={}
+n_record_format_list={}
+v_record_format={}
+bkp_xml_path=xml_path
+for k in base_elements:
+  #print"Base Element is ",k
+  #v_record_format=k+"|"
+  #record_format.write(k+"|")
+  v_record_format={}
+  xml_path=bkp_xml_path
+  bkp_xml_path=[]
+  temp_field=[]
+  for n in xml_path:
+    if k in n:
+      #print(n)
+      #record_format.write(n+"|")
+      #print k,n
+      #v_record_format[n.replace(k+'/',"").replace('/','_')]=n
+      #v_record_format[n]=n
+      fName=create_field(n.replace(k+"/","").lower()).replace(".","_")
+      v_record_format[fName]=n
+    else:
+      bkp_xml_path.append(n)
+  record_format_list[k]=v_record_format
+
+
+v_key=""
+counter=0
+base_key=[]
+key_list=[]
+for i in base_elements:
+  #print (i)
+  v_key=""
+  f_key=i
+  counter=0
+  for j in base_elements:
+    counter=counter+1
+    if j in i:
+      head, tail = os.path.split(j)
+      v_key=tail.replace('.','_').lower()+"_seq_num"+str(counter)
+      record_format_list[i][v_key]=0
+      key_list.append(v_key)
+      f_key=f_key+"|"+v_key
+  base_key.append(f_key)
+
+
+#print base_key
+#print record_format_list
+
+base_element = open("base_element.txt", "w")
+for j in base_key:
+  #print (j)
+  base_element.write(j+"\n")
+base_element.close()
+
+
+key_list=list(set(key_list))
+keys = open("keys.txt", "w")
+
+for j in key_list:
+  keys.write(j+"\n")
+keys.close()
+
+#print record_format_list
+record_format = open("record_format.txt", "w")
+record_format.write(json.dumps(record_format_list)+'\n')
+record_format.close()
