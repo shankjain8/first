@@ -1,3 +1,269 @@
+import xml.etree.ElementTree as etree
+import sys
+import os
+import json
+from shutil import copyfile
+v_global=""
+v_array=""
+xml_path=[]
+main_key=0
+key=0
+sample_count=sys.argv[2]
+file_name=sys.argv[1]
+version=sys.argv[3]
+temp_field=[]
+list_parent=[]
+prev_v_global=""
+
+
+if os.path.isfile("record_format.txt"):
+  print("Append Run [Version == "+version+"]")
+else:
+  print ("First Run [Version == "+version+"]")
+
+
+
+if not os.path.exists("./version/"+version):
+    try:
+        print("Creating Version Directory == /version/"+version)
+        os.makedirs("./version/"+version)
+    except OSError as exc: # Guard against race condition
+        if exc.errno != errno.EEXIST:
+            raise
+
+
+
+
+def extract_attributes(att,v_globalf,main_keyf,keyf):
+  for i in att:
+    j=i
+    if "}" in j:
+      j=i.split('}',1)[1]
+    xml_path.append(v_globalf+"/"+j)
+
+
+def create_field(field):
+
+  global temp_field
+  if "/" in field:
+    head, tail = os.path.split(field)
+  elif "/" not in field:
+    tail = field
+
+  if tail not in temp_field:
+    temp_field.append(tail)
+    return(tail)
+  elif tail in temp_field:
+    if "/" in field:
+      xyz=rreplace(field,"/","_",1)
+    else:
+      xyz=field+"_1"
+    c=create_field(xyz)
+    return(c)
+
+class InvalidMessageException(Exception):
+     pass
+
+class InvalidFieldException(Exception):
+     pass
+
+
+def rreplace(s, old, new, occurrence):
+  li = s.rsplit(old, occurrence)
+  return new.join(li)
+
+def extract_path(xml_file,prev_v_global):
+  global v_global
+  global list_parent
+  v_global=""
+  for event, elem in etree.iterparse(xml_file, events=('start', 'end')):
+    if event == 'start':
+      IND="START"
+      tag=elem.tag
+      if "}" in elem.tag:
+        tag=elem.tag.split('}', 1)[1]
+      v_global=v_global+"/"+tag
+      if v_global == prev_v_global:
+        list_parent.append(v_global)
+        list_parent.append(v_global)
+      xml_path.append(v_global)
+      if len(elem.attrib) != 0 :
+        extract_attributes(elem.attrib,v_global,main_key,key)
+      prev_v_global=v_global
+    elif event == 'end':
+      if IND!="START":
+        list_parent.append(v_global)
+      tag1=elem.tag
+      if "}" in elem.tag:
+        tag1=elem.tag.split('}', 1)[1]
+      v_global = v_global[:-len(tag1)-1]
+      IND="END"
+
+sampling=0
+file_object  = open(file_name,'r')
+for file_content in file_object:
+  temp_xml = open("temp", "w")
+  temp_xml.write(file_content)
+  temp_xml.close()
+  v_global=""
+  if sampling < int(sample_count):
+    try:
+      x = etree.fromstring(file_content)
+      extract_path('temp',prev_v_global)
+      os.remove("temp")
+    except:
+      pass
+  else:
+    break
+  sampling=sampling+1
+
+unique_list_parent=list(set(list_parent))
+prev_path=""
+end_parent=""
+base_elements=[]
+base_elements.append("/"+unique_list_parent[0].split('/')[1])
+
+for i in unique_list_parent:
+  head, tail = os.path.split(i)
+  end_parent="unset"
+  prev_path=""
+  for j in list_parent:
+    if ( prev_path == j and end_parent != "set" ):
+      base_elements.append(i)
+    if ( j == head ):
+      end_parent="set"
+    if ( i == j ):
+      prev_path=i
+      end_parent="unset"
+
+base_elements=list(set(base_elements))
+base_elements.sort(key=len)
+base_elements=list(reversed(base_elements))
+xml_path=list(set(xml_path))
+xml_path.sort()
+
+for c in unique_list_parent:
+  xml_path.remove(c)
+
+
+#CREATE UPDATED TABEL DICTIONARY
+#p_table_dictionary should be read from prev_config file#
+if os.path.isfile("base_dict.txt"):
+  prev_base_dict = json.load(open('base_dict.txt'))
+  curr_base_dict = json.load(open('base_dict.txt'))
+else:
+  prev_base_dict = {}
+  curr_base_dict = {}
+temp_field=prev_base_dict.values()
+
+
+for j in base_elements:
+  if prev_base_dict.get(j, None) is None:
+    curr_base_dict[j]=create_field(j.lower()).replace(".","_")
+
+
+base_dict  = open("base_dict.txt", "w")
+base_dict.write(json.dumps(curr_base_dict)+'\n')
+base_dict.close()
+
+new_base_elements=curr_base_dict.keys()
+new_base_elements=list(set(new_base_elements))
+new_base_elements.sort(key=len)
+new_base_elements=list(reversed(new_base_elements))
+
+if os.path.isfile("record_format.txt"):
+  prev_data_dict = json.load(open('record_format.txt'))
+  curr_data_dict = json.load(open('record_format.txt'))
+else:
+  prev_data_dict={}
+  curr_data_dict={}
+
+record_format_list={}
+n_record_format_list={}
+v_record_format={}
+bkp_xml_path=xml_path
+for k in base_elements:
+  if prev_base_dict.get(k, None) is None:
+    v_record_format={}
+    xml_path=bkp_xml_path
+    bkp_xml_path=[]
+    temp_field=[]
+    for n in xml_path:
+      if k in n:
+        fName=create_field(n.replace(k+"/","").lower()).replace(".","_")
+        v_record_format[fName]=n
+      else:
+        bkp_xml_path.append(n)
+    record_format_list[k]=v_record_format
+    curr_data_dict[k]=v_record_format
+  else :
+    v_record_format=curr_data_dict[k]
+
+    xml_path=bkp_xml_path
+    bkp_xml_path=[]
+    temp_field=v_record_format.keys()
+    temp_xml_field=v_record_format.values()
+    for n in xml_path:
+
+      if k in n and n not in temp_xml_field:
+        fName=create_field(n.replace(k+"/","").lower()).replace(".","_")
+        v_record_format[fName]=n
+      elif k in n:
+        no_action=True
+      else:
+        bkp_xml_path.append(n)
+    curr_data_dict[k]=v_record_format
+    record_format_list[k]=v_record_format
+
+   
+v_key=""
+counter=0
+base_key=[]
+key_list=[]
+for i in new_base_elements:
+  v_key=""
+  f_key=i
+  counter=0
+  for j in new_base_elements:
+    counter=counter+1
+    if j in i:
+      head, tail = os.path.split(j)
+      v_key=curr_base_dict[j]+"_seq_num"    
+      curr_data_dict[i][v_key]=0
+      key_list.append(v_key)
+      f_key=f_key+"|"+v_key
+  base_key.append(f_key)
+
+
+
+base_element = open("base_element.txt", "w")
+for j in base_key:
+  base_element.write(j+"\n")
+base_element.close()
+
+
+key_list=list(set(key_list))
+keys = open("keys.txt", "w")
+
+for j in key_list:
+  keys.write(j+"\n")
+keys.close()
+
+#print record_format_list
+record_format = open("record_format.txt", "w")
+record_format.write(json.dumps(curr_data_dict)+'\n')
+record_format.close()
+
+
+#BACKING UP THE CONFIG FILES
+print("Schema Generated. Backing Up the config in ./version/"+version)
+copyfile("base_element.txt","./version/"+version+"/base_element.txt")
+copyfile("keys.txt","./version/"+version+"/keys.txt")
+copyfile("record_format.txt","./version/"+version+"/record_format.txt")
+copyfile("base_dict.txt","./version/"+version+"/base_dict.txt")
+
+
+
 //////////////
 
 
