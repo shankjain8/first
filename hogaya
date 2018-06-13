@@ -1,0 +1,81 @@
+from tkinter import *
+import json
+
+global lbox_list
+lbox_list=[]
+
+data = json.load(open('record_format.txt'))
+
+for i in data:
+    for j in data[i]:
+        if "seq_num" not in j:
+            lbox_list.append(data[i][j])
+
+lbox_list=set(lbox_list)
+
+
+class Application(Frame):
+
+    def __init__(self, master=None):
+        Frame.__init__(self,master)
+        self.pack()
+        self.create_widgets()
+        
+    def create_widgets(self):
+        self.search_var = StringVar()
+        self.search_var.trace("w", lambda name,index,mode:self.update_list())
+        self.entry = Entry(self, textvariable=self.search_var,width=45)
+        self.hbar = Scrollbar(self,orient='horizontal')
+        self.lbox = Listbox(self,width=25,height=15,xscrollcommand = self.hbar.set)
+        self.lbox1 = Listbox(self,width=45,height=15)
+        self.entry.grid(row=0,column=0,padx=10,pady=3)
+        self.lbox.grid(row=1,column=0,padx=10,pady=3)
+        self.lbox1.grid(row=1,column=1,padx=10,pady=3)
+        self.hbar.grid(row=3,column=0,padx=10,pady=3)
+        self.hbar.config( command = self.lbox.xview )
+
+        self.update_list()
+        self.lbox.bind('<Double-1>',self.add_field)
+        self.lbox1.bind('<Double-1>',self.remove_field)
+        for i in range(0,self.lbox.size(),2):
+            self.lbox.itemconfigure(i,background="#f0f0ff")
+
+    def add_field(self,*args):
+        idxs = self.lbox.curselection()
+        if len(idxs)==1:
+            itema = self.lbox.get(self.lbox.curselection())
+            self.lbox1.insert(END,itema)
+            lbox_list.remove(self.lbox.get(self.lbox.curselection()))
+            self.update_list()
+
+    def remove_field(self,*args):
+        idxs = self.lbox1.curselection()
+        if len(idxs)==1:
+            itemb = self.lbox1.get(self.lbox1.curselection())
+            lbox_list.append(itemb)
+            self.lbox1.delete(idxs)
+            self.update_list()
+
+    def update_list(self):
+        search_term = self.search_var.get()
+
+        self.lbox.delete(0,END)
+        for item in lbox_list:
+            if search_term.lower() in item.lower():
+                self.lbox.insert(END,item)
+        
+        for i in range(0,self.lbox.size(),2):
+            self.lbox.itemconfigure(i,background="#f0f0ff")
+
+        for i in range(0,self.lbox1.size(),2):
+            self.lbox1.itemconfigure(i,background="#f0f0ff")
+
+root = Tk()
+root.title("Generic XML Parsing")
+app = Application(master=root)
+print("Starting mainloop()")
+app.mainloop()       
+
+
+
+
