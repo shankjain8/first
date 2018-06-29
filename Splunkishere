@@ -1,159 +1,357 @@
-<form stylesheet="sha.css,dashboard2.css" script="hide.js">
-  <label>My New</label>
-  <fieldset submitButton="false">
-    <input type="time" token="ok">
-      <label>ok</label>
-      <default>
-        <earliest>-24h@h</earliest>
-        <latest>now</latest>
-      </default>
-    </input>
-  </fieldset>
-  <row>
-    <panel>
-       <html>
-                <h2>Sample Description</h2>
-                <p>This is some sample description that only shows up if you click on the "Show Details" button.</p>
-                <button class="btn" data-unset-token="start1">Hide Details</button>
-            </html>
-      <title>$start$ and $end$   and $start1$ and $end1$</title>
-      <table>
-        <search>
-          <query>|stats count | eval start_time="07-22-2017 21:50:00" ,end_time="07-24-2017 21:52:00", app_nm="shasha"| table app_nm,start_time,end_time</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
-          <sampleRatio>1</sampleRatio>
-        </search>
-        <option name="count">20</option>
-        <option name="dataOverlayMode">none</option>
-        <option name="drilldown">row</option>
-        <option name="percentagesRow">false</option>
-        <option name="rowNumbers">false</option>
-        <option name="totalsRow">false</option>
-        <option name="wrap">true</option>
-        <drilldown>
-          <set token="start">$row.start_time$</set>
-          <set token="end">$row.end_time$</set>
-          <eval token="start1">strptime($start$,"%m-%d-%Y %H:%M:%S")</eval>
-          <eval token="end1">strptime($end$,"%m-%d-%Y %H:%M:%S")</eval>
-        </drilldown>
-      </table>
-    </panel>
-    <panel depends="$start1$">
-      <chart>
-        <search>
-          <query>index="_internal"    | timechart count</query>
-          <earliest>$start1$</earliest>
-          <latest>$end1$</latest>
-        </search>
-        <option name="charting.axisLabelsX.majorLabelStyle.overflowMode">ellipsisNone</option>
-        <option name="charting.axisLabelsX.majorLabelStyle.rotation">0</option>
-        <option name="charting.axisTitleX.visibility">visible</option>
-        <option name="charting.axisTitleY.visibility">visible</option>
-        <option name="charting.axisTitleY2.visibility">visible</option>
-        <option name="charting.axisX.scale">linear</option>
-        <option name="charting.axisY.scale">linear</option>
-        <option name="charting.axisY2.enabled">0</option>
-        <option name="charting.axisY2.scale">inherit</option>
-        <option name="charting.chart">line</option>
-        <option name="charting.chart.bubbleMaximumSize">50</option>
-        <option name="charting.chart.bubbleMinimumSize">10</option>
-        <option name="charting.chart.bubbleSizeBy">area</option>
-        <option name="charting.chart.nullValueMode">gaps</option>
-        <option name="charting.chart.showDataLabels">none</option>
-        <option name="charting.chart.sliceCollapsingThreshold">0.01</option>
-        <option name="charting.chart.stackMode">default</option>
-        <option name="charting.chart.style">shiny</option>
-        <option name="charting.drilldown">none</option>
-        <option name="charting.layout.splitSeries">0</option>
-        <option name="charting.layout.splitSeries.allowIndependentYRanges">0</option>
-        <option name="charting.legend.labelStyle.overflowMode">ellipsisMiddle</option>
-        <option name="charting.legend.placement">right</option>
-        <option name="trellis.enabled">0</option>
-        <option name="trellis.scales.shared">1</option>
-        <option name="trellis.size">medium</option>
-      </chart>
-    </panel>
-  </row>
-  <row>
-    <panel>
-      <table>
-        <title>$ok.earliest$   and $ok.latest$</title>
-        <search>
-          <query>index="_internal"    | timechart count</query>
-          <earliest>$ok.earliest$</earliest>
-          <latest>$ok.latest$</latest>
-          <sampleRatio>1</sampleRatio>
-        </search>
-        <option name="count">20</option>
-        <option name="dataOverlayMode">none</option>
-        <option name="drilldown">none</option>
-        <option name="percentagesRow">false</option>
-        <option name="rowNumbers">false</option>
-        <option name="totalsRow">false</option>
-        <option name="wrap">true</option>
-      </table>
-    </panel>
-    <panel>
-      <table>
-        <search>
-          <query>index="_internal"    | timechart count</query>
-          <earliest>-24h@h</earliest>
-          <latest>now</latest>
-          <sampleRatio>1</sampleRatio>
-        </search>
-        <option name="count">20</option>
-        <option name="dataOverlayMode">none</option>
-        <option name="drilldown">none</option>
-        <option name="percentagesRow">false</option>
-        <option name="rowNumbers">false</option>
-        <option name="totalsRow">false</option>
-        <option name="wrap">true</option>
-      </table>
-    </panel>
-  </row>
-</form>
+from tkinter import *
+import json
+
+global lbox_list1
+lbox_list1=[]
+
+data = json.load(open('record_format.txt'))
+base_dict = json.load(open('base_dict.txt'))
+
+query=""
+def find_tables(field_list):
+    global query
+    table_list=[]
+    for field in field_list:
+        for table in data:
+            if field in data[table].values():
+                table_list.append(table)
+    table_list = list(set(table_list))
+    return(table_list)
+
+def find_fields(tab_dict,field_list):
+    global query
+    query="SELECT \n"
+#    print("SELECT ")
+    for table in data:
+        for field in data[table]:
+            if data[table][field] in field_list:
+                query=query+" "+tab_dict[table].replace("|","")+"."+field+", \n"
+                #print(tab_dict[table].replace("|","")+"."+field+",")
+    query=query+" FROM "
+    for a in tab_dict:
+        query=query+" " +base_dict[a] + " "+ tab_dict[a].replace("|","")+", \n"
+        #print(base_dict[a] + " "+ tab_dict[a].replace("|","")+",")
+
+def find_keys(table_list):
+    global query
+    #Adding Logic to Assign Alias to tables.
+    query=""
+    t_dict={}
+    counter=0
+    for t in table_list:
+        counter=counter+1
+        t_dict[t]="T"+"|"+str(counter)
+        #print(t_dict)
+    find_fields(t_dict,sel_field)
+    query=query+" "+"WHERE \n"
+    join_key="WHERE "
+    for table in table_list:
+        for v_table in table_list:
+            if (v_table!=table) and int(t_dict[table].split("|")[1]) < int(t_dict[v_table].split("|")[1]):
+                key1=data[table].keys()
+                key2=data[v_table].keys()
+                tab1_alias=t_dict[table].replace("|","")
+                tab1=base_dict[table]
+                tab2_alias=t_dict[v_table].replace("|","")
+                tab2=base_dict[v_table]
+                join_state=tab1+" "+tab1_alias+" JOIN "+tab2+" "+tab2_alias+" ON ("
+              #  print(join_state)
+                
+                for key in key1:
+                    if "seq_num" in key and key in key2:
+                        join_key=join_key+tab1_alias+"."+key+ " = " + tab2_alias+"."+key+" AND "
+    #print(join_key)
+    query=query+" "+join_key
+    print(query)
+#                print("compare",base_dict[table]," ",base_dict[v_table])
 
 
-require(['jquery', 'underscore', 'splunkjs/mvc', 'util/console'], function($, _, mvc, console) {
-    function setToken(name, value) {
-        console.log('Setting Token %o=%o', name, value);
-        var defaultTokenModel = mvc.Components.get('default');
-        if (defaultTokenModel) {
-            defaultTokenModel.set(name, value);
-        }
-        var submittedTokenModel = mvc.Components.get('submitted');
-        if (submittedTokenModel) {
-            submittedTokenModel.set(name, value);
-        }
-    }
-    $('.dashboard-body').on('click', '[data-set-token],[data-unset-token],[data-token-json]', function(e) {
-        e.preventDefault();
-        var target = $(e.currentTarget);
-        var setTokenName = target.data('set-token');
-        if (setTokenName) {
-            setToken(setTokenName, target.data('value'));
-        }
-        var unsetTokenName = target.data('unset-token');
-        if (unsetTokenName) {
-            setToken(unsetTokenName, undefined);
-        }
-        var tokenJson = target.data('token-json');
-        if (tokenJson) {
-            try {
-                if (_.isObject(tokenJson)) {
-                    _(tokenJson).each(function(value, key) {
-                        if (value == null) {
-                            // Unset the token
-                            setToken(key, undefined);
-                        } else {
-                            setToken(key, value);
-                        }
-                    });
-                }
-            } catch (e) {
-                console.warn('Cannot parse token JSON: ', e);
-            }
-        }
-    });
-});
+
+for i in data:
+    for j in data[i]:
+        if "seq_num" not in j:
+            lbox_list1.append(data[i][j])
+
+global lbox_list
+lbox_list=[]
+
+for i in lbox_list1:
+    lbox_list.append(i)
+
+
+global sel_field
+sel_field=[]
+
+class Application(Frame):
+
+    def __init__(self, master=None):
+        Frame.__init__(self,master)
+        self.pack()
+        self.create_widgets()
+        
+    def create_widgets(self):
+        self.var = StringVar()
+        self.var.set("Current Selection : NONE")
+        self.search_var = StringVar()
+        self.search_var.trace("w", lambda name,index,mode:self.update_list())
+        self.l_avail_filed = Label(self, text="Selected Fields")
+        self.entry = Entry(self, textvariable=self.search_var,width=45)
+        #self.cur_sel = Label(self,textvariable = self.var)
+        self.cur_sel = Text(self)
+         
+        self.hbar = Scrollbar(self,orient='horizontal')
+        self.lbox = Listbox(self,width=50,height=20,xscrollcommand = self.hbar.set)
+        self.lbox1 = Listbox(self,width=50,height=20)
+        self.entry.grid(row=0,column=0,padx=10,pady=3)
+        self.l_avail_filed.grid(row=0,column=1,padx=10,pady=3)
+        self.lbox.grid(row=1,column=0,padx=10,pady=3)
+        self.lbox1.grid(row=1,column=1,padx=10,pady=3)
+        self.hbar.grid(row=3,column=0,padx=10,pady=3)
+        self.hbar.config( command = self.lbox.xview )
+        self.cur_sel.grid(row=4,column=0)
+        self.update_list()
+        self.lbox.bind('<Double-1>',self.add_field)
+        self.lbox.bind('<Return>',self.add_field)
+        self.lbox1.bind('<Double-1>',self.remove_field)
+        self.lbox1.bind('<Delete>',self.remove_field)
+        self.lbox.bind('<<ListboxSelect>>', self.onselect)
+        for i in range(0,self.lbox.size(),2):
+            self.lbox.itemconfigure(i,background="#f0f0ff")
+
+    def onselect(self,*args):
+        print("i am here")
+        self.var.set("Current Selection : "+ self.lbox.get(self.lbox.curselection()))
+
+    def add_field(self,*args):
+        idxs = self.lbox.curselection()
+        
+        if len(idxs)==1:
+            itema = self.lbox.get(self.lbox.curselection())
+            self.lbox1.insert(END,itema)
+            lbox_list.remove(self.lbox.get(self.lbox.curselection()))
+            sel_field.append(self.lbox.get(self.lbox.curselection()))
+            self.update_list()
+        #self.var.set("Last Selected : "+ self.lbox.get(self.lbox.curselection()))
+        self.var.set(query)
+        self.cur_sel.delete(1.0,END)
+        self.cur_sel.insert(INSERT,query)
+        Text
+
+    def remove_field(self,*args):
+        idxs = self.lbox1.curselection()
+        self.var.set("Last Removed : "+ self.lbox1.get(self.lbox1.curselection()))
+        if len(idxs)==1:
+            itemb = self.lbox1.get(self.lbox1.curselection())
+            lbox_list.append(itemb)
+            self.lbox1.delete(idxs)
+            sel_field.remove(itemb)
+            self.update_list()
+
+    def update_list(self):
+        search_term = self.search_var.get()
+
+        self.lbox.delete(0,END)
+        for item in lbox_list:
+            if search_term.lower() in item.lower():
+                self.lbox.insert(END,item)
+        
+        for i in range(0,self.lbox.size(),2):
+            self.lbox.itemconfigure(i,background="#f0f0ff")
+
+        for i in range(0,self.lbox1.size(),2):
+            self.lbox1.itemconfigure(i,background="#ffcbcb")
+        find_keys(find_tables(sel_field))
+
+root = Tk()
+root.title("Generic XML Parsing")
+root.configure(background='black')
+app = Application(master=root)
+print("Starting mainloop()")
+app.mainloop()   
+  
+  from tkinter import *
+
+oneThing = {"Name:": "Guido", "Tel.:":"666-6969", "Email:":"foobar@lol.com"}
+another = {"Name:": "Philler", "Tel.:":"111-1111", "Email:":"philler@lol.com"}
+z = ["ABC", "DEF"]
+
+root = Tk()
+l = Listbox(root)
+l.pack(fill = "both")
+l.pack_propagate(True)
+[l.insert(END, item) for item in z]
+
+def createPerson(index,field):
+    def edit():
+        for i in range(len(labels)):
+            z[index] = entries[i].get()
+        print(z)
+        top.destroy()
+
+    top = Toplevel()
+    labels = ["Name:"]
+    i = 0
+    for text in labels:
+        Label(top, text = text).grid(column = 0, row = i)
+        i += 1
+
+    e1 = Entry(top)
+    e1.insert(0,field)
+    e1.grid(column = 1, row = 0)
+
+    Button(top, text = "Submit", command = edit).grid(column = 1, row = 1)
+    entries = [e1]
+    return top
+
+def edit():
+    global l, z, root
+    sel = l.curselection()
+    test1=l.get(sel[0])
+    if len(sel) > 0:
+        indexToEdit = z.index((l.get(sel[0])))
+        l.delete(sel)
+        root.wait_window(createPerson(indexToEdit,test1))
+        print(z[indexToEdit])
+        l.insert(sel, z[indexToEdit])
+
+Button(root, text = "Edit", command = edit).pack()
+root.mainloop()
+
+from tkinter import *
+import json
+data = json.load(open('record_format.txt'))
+base_dict = json.load(open('base_dict.txt'))
+
+#global lbox_list1
+xpath_list=[]
+xpath_field_list=[]
+
+#Getting the field List
+for i in data:
+    for j in data[i]:
+        if "seq_num" not in j:
+            xpath_list.append(data[i][j])
+            xpath_field_list.append(j)
+
+global sel_field
+sel_field=[]
+global sel_field_list
+sel_field_list=[]
+class Application(Frame):
+
+    def __init__(self, master=None):
+        Frame.__init__(self,master)
+        self.pack()
+        self.create_widgets()
+
+
+
+    def create_widgets(self):
+        #SEARCH FEATURE#
+        self.search_var = StringVar()
+        self.search_var.trace("w", lambda name,index,mode:self.update_list())
+        self.entry = Entry(self, textvariable=self.search_var,width=45)
+        self.entry.grid(row=0,column=1,sticky=W,padx=10,pady=3)
+        ##################
+        
+
+
+        self.scrollbar = Scrollbar(self, orient=VERTICAL)
+        self.scrollbar.config(command=self.OnVsb)
+        self.scrollbar.grid(row=1,column=2,sticky=N+S )
+        self.Hscrollbar = Scrollbar(self, orient=HORIZONTAL)
+
+
+        self.xpath_lbox = Listbox(self,width=150,height=20)
+        self.xpath_lbox.config(yscrollcommand=self.scrollbar.set,xscrollcommand=self.Hscrollbar.set)
+        self.xpath_lbox.grid(row=1,column=1,padx=3,pady=3)
+        self.xpath_lbox.bind("<MouseWheel>", self.OnMouseWheel)
+
+        
+        self.Hscrollbar.config(command=self.xpath_lbox.xview)
+        self.Hscrollbar.grid(row=2,column=1,sticky=W+E )
+
+        self.xpath_field_lbox = Listbox(self,width=30,height=20)
+        self.xpath_field_lbox.config(yscrollcommand=self.scrollbar.set)
+        self.xpath_field_lbox.grid(row=1,column=3,padx=3,pady=3)
+        self.xpath_field_lbox.bind("<MouseWheel>", self.OnMouseWheel)
+               
+        self.sel_xpath_lbox = Listbox(self,width=150,height=20)
+        self.sel_xpath_lbox.config(yscrollcommand=self.scrollbar.set)
+        self.sel_xpath_lbox.grid(row=3,column=1,padx=3,pady=3)
+        self.sel_xpath_lbox.bind("<MouseWheel>", self.OnMouseWheel)
+
+        self.sel_xpath_field_lbox = Listbox(self,width=30,height=20)
+        self.sel_xpath_field_lbox.config(yscrollcommand=self.scrollbar.set)
+        self.sel_xpath_field_lbox.grid(row=3,column=3,padx=3,pady=3)
+        self.sel_xpath_field_lbox.bind("<MouseWheel>", self.OnMouseWheel)
+
+        self.xpath_lbox.bind('<Double-1>',self.add_field)
+        self.xpath_lbox.bind('<Return>',self.add_field)             
+        self.sel_xpath_lbox.bind('<Double-1>',self.remove_field)
+        self.sel_xpath_lbox.bind('<Delete>',self.remove_field)
+
+        self.update_list()
+
+    def add_field(self,*args):
+        idxs = self.xpath_lbox.curselection()
+        if len(idxs)==1:
+            itema = self.xpath_lbox.get(self.xpath_lbox.curselection())
+            itema_field = self.xpath_field_lbox.get(self.xpath_lbox.curselection())
+            print(itema,itema_field)
+            self.sel_xpath_lbox.insert(END,itema)
+            self.sel_xpath_field_lbox.insert(END,itema_field)
+            xpath_list.remove(itema)
+            xpath_field_list.remove(itema_field)
+            sel_field.append(itema)
+            sel_field_list.append(itema_field)
+            self.update_list()
+        #self.var.set("Last Selected : "+ self.lbox.get(self.lbox.curselection()))
+        #self.var.set(query)
+        #self.cur_sel.delete(1.0,END)
+        #self.cur_sel.insert(INSERT,query)
+
+    def remove_field(self,*args):
+        idxs = self.sel_xpath_lbox.curselection()
+        if len(idxs)==1:
+            itemb = self.sel_xpath_lbox.get(self.sel_xpath_lbox.curselection())
+            itemb_field = self.sel_xpath_field_lbox.get(self.sel_xpath_lbox.curselection())
+            print(itemb,itemb_field)
+            xpath_list.append(itemb)
+            xpath_field_list.append(itemb_field)
+            self.sel_xpath_lbox.delete(idxs)
+            self.sel_xpath_field_lbox.delete(idxs)
+            sel_field.remove(itemb)
+            sel_field_list.remove(itemb_field)
+            self.update_list()
+
+
+    def update_list(self):
+        search_term = self.search_var.get()
+
+        self.xpath_lbox.delete(0,END)
+        self.xpath_field_lbox.delete(0,END)
+        for idx, val in enumerate(xpath_list):
+            if search_term.lower() in val.lower():
+                self.xpath_lbox.insert(END,xpath_list[idx])
+                self.xpath_field_lbox.insert(END,xpath_field_list[idx])
+        print(sel_field,sel_field_list)
+
+    def OnVsb(self, *args):
+        self.xpath_lbox.yview(*args)
+        self.xpath_field_lbox.yview(*args)
+
+    def OnMouseWheel(self, event):
+        self.xpath_lbox.yview("scroll", event.delta,"units")
+        self.xpath_field_lbox.yview("scroll",event.delta,"units")
+        # this prevents default bindings from firing, which
+        # would end up scrolling the widget twice
+        return "break"    
+
+
+root = Tk()
+root.title("Generic XML Parsing")
+root.configure(background='black')
+app = Application(master=root)
+print("Starting mainloop()")
+app.mainloop() 
