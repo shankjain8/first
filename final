@@ -1,0 +1,301 @@
+from tkinter import *
+import json
+data = json.load(open('record_format.txt'))
+base_dict = json.load(open('base_dict.txt'))
+
+query_field=[]
+query_tables=[]
+query_key=[]
+
+#global lbox_list1
+xpath_list=[]
+xpath_field_list=[]
+
+#Getting the field List
+for i in data:
+    for j in data[i]:
+        if "seq_num" not in j:
+            xpath_list.append(data[i][j])
+            xpath_field_list.append(j)
+
+global sel_field
+sel_field=[]
+
+global sel_field_list
+sel_field_list=[]
+
+global sel_user_field_list
+sel_user_field_list=[]
+
+def find_tables(field_list):
+    global query
+    table_list=[]
+    for field in field_list:
+        for table in data:
+            if field in data[table].values():
+                table_list.append(table)
+    table_list = list(set(table_list))
+    #print(table_list)
+    return(table_list)
+
+def find_fields(tab_dict,field_list):
+    global query
+    global query_field
+    query_field=[]
+    global query_tables
+    query_tables=[]
+    query="SELECT \n"
+#    print("SELECT ")
+    for table in data:
+        for field in data[table]:
+            if data[table][field] in field_list:
+                #print(tab_dict[table].replace("|","")+"."+field+" as "+sel[field_list.index(data[table][field])])
+                query_field.append(tab_dict[table].replace("|","")+"."+field+" as "+sel_field_list[field_list.index(data[table][field])])
+                
+
+    query=query+" FROM "
+    for a in tab_dict:
+        #print(" " +base_dict[a] + " "+ tab_dict[a].replace("|",""))
+        query_tables.append(base_dict[a] + " "+ tab_dict[a].replace("|",""))
+
+
+def find_keys(table_list):
+    global query_field
+    global query_tables
+    global query_key
+    global query
+    query_key=[]
+    query=""
+    t_dict={}
+    counter=0
+    for t in table_list:
+        counter=counter+1
+        t_dict[t]="T"+"|"+str(counter)
+    find_fields(t_dict,sel_field)
+    query=query+" "+"WHERE \n"
+    join_key="WHERE "
+    for table in table_list:
+        for v_table in table_list:
+            if (v_table!=table) and int(t_dict[table].split("|")[1]) < int(t_dict[v_table].split("|")[1]):
+                key1=data[table].keys()
+                key2=data[v_table].keys()
+                tab1_alias=t_dict[table].replace("|","")
+                tab1=base_dict[table]
+                tab2_alias=t_dict[v_table].replace("|","")
+                tab2=base_dict[v_table]
+
+              #  print(join_state)
+                
+                for key in key1:
+                    if "seq_num" in key and key in key2:
+                        #print(tab1_alias+"."+key+ " = " + tab2_alias+"."+key)
+                        query_key.append(tab1_alias+"."+key+ "=" + tab2_alias+"."+key)
+                        join_key=join_key+tab1_alias+"."+key+ " = " + tab2_alias+"."+key+" AND "
+
+    return(make_select(query_field,query_tables,query_key))
+def make_select(query_field,query_tables,query_key):
+    counter_table=[]
+    F_QUERY="SELECT \n"
+    for field in query_field:
+        if field not in query_field[-1]:
+            F_QUERY=F_QUERY+field+" ,\n"
+        else:
+            F_QUERY=F_QUERY+field+"\nFROM \n"
+    for table in query_tables:
+        counter_table.append(table.split(" ")[1])
+        if len(query_tables) == 1:
+            F_QUERY=F_QUERY+table+";"
+        elif query_tables[0] == table:
+            F_QUERY=F_QUERY +table+ " JOIN "
+        elif query_tables[-1] not in table:
+
+            F_QUERY=F_QUERY+table+ " ON \n"+join(counter_table)+"\nJOIN "
+        else:
+            F_QUERY=F_QUERY+table+ " ON \n"+join(counter_table)+";"
+    return(F_QUERY)
+
+def join(counter_table):
+    global query_key
+    ind=0
+    bkp=list(query_key)
+    fkey="(\n"
+    for key in query_key:
+        ind=0
+        temp=key.split("=")
+        for i in temp:
+            if i.split(".")[0] in counter_table:
+                ind=ind+1
+        #print(ind)
+        if ind == 2:
+            fkey=fkey+key+"\n"
+            bkp.remove(key)
+    query_key=list(bkp)
+    fkey=fkey+")"
+    return(fkey)
+
+
+
+class Application(Frame):
+
+    def __init__(self, master=None):
+        Frame.__init__(self,master)
+        self.pack()
+        self.create_widgets()
+
+
+
+    def create_widgets(self):
+        #SEARCH FEATURE#
+        self.search_var = StringVar()
+        self.var = StringVar()
+        self.search_var.trace("w", lambda name,index,mode:self.update_list())
+        self.entry = Entry(self, textvariable=self.search_var,width=45,relief=RIDGE,bd=4)
+        self.entry.grid(row=0,column=1,sticky=W,padx=10,pady=3)
+        ##################
+        self.cur_sel = Text(self,width=40,relief=GROOVE,bd=4)
+        self.scrollbar = Scrollbar(self, orient=VERTICAL,relief=RIDGE,bd=4)
+        self.scrollbar.config(command=self.OnVsb)
+        self.scrollbar.grid(row=1,column=2,sticky=N+S )
+        self.Hscrollbar = Scrollbar(self, orient=HORIZONTAL,relief=GROOVE)
+
+
+        self.xpath_lbox = Listbox(self,width=100,height=15,relief=GROOVE,bd=4)
+        self.xpath_lbox.config(yscrollcommand=self.scrollbar.set,xscrollcommand=self.Hscrollbar.set)
+        self.xpath_lbox.grid(row=1,column=1,padx=5,pady=5)
+        self.xpath_lbox.bind("<MouseWheel>", self.OnMouseWheel)
+
+        
+        self.Hscrollbar.config(command=self.xpath_lbox.xview)
+        self.Hscrollbar.grid(row=2,column=1,sticky=W+E )
+
+        self.xpath_field_lbox = Listbox(self,width=30,height=15,relief=GROOVE,bd=4)
+        self.xpath_field_lbox.config(yscrollcommand=self.scrollbar.set)
+        self.xpath_field_lbox.grid(row=1,column=3,padx=5,pady=5)
+        self.xpath_field_lbox.bind("<MouseWheel>", self.OnMouseWheel)
+               
+        self.sel_xpath_lbox = Listbox(self,width=100,height=15,relief=GROOVE,bd=4)
+        self.sel_xpath_lbox.config(yscrollcommand=self.scrollbar.set)
+        self.sel_xpath_lbox.grid(row=3,column=1,padx=5,pady=5)
+        self.sel_xpath_lbox.bind("<MouseWheel>", self.OnMouseWheel)
+
+        self.sel_xpath_field_lbox = Listbox(self,width=30,height=15,relief=GROOVE,bd=4)
+        #self.sel_xpath_field_lbox.config(yscrollcommand=self.scrollbar.set)
+        #self.sel_xpath_field_lbox.grid(row=3,column=3,padx=3,pady=3)
+        #self.sel_xpath_field_lbox.bind("<MouseWheel>", self.OnMouseWheel)
+
+        self.sel_xpath_field_name = Listbox(self,width=30,height=15,relief=GROOVE,bd=4)
+        self.sel_xpath_field_name.config(yscrollcommand=self.scrollbar.set)
+        self.sel_xpath_field_name.grid(row=3,column=3,padx=5,pady=5)
+        self.sel_xpath_field_name.bind("<MouseWheel>", self.OnMouseWheel)
+        self.cur_sel.grid(row=1,column=4,rowspan = 3,sticky=N+S,padx=5,pady=5)
+
+        self.xpath_lbox.bind('<Double-1>',self.add_field)
+        self.xpath_lbox.bind('<Return>',self.add_field)             
+        self.sel_xpath_lbox.bind('<Double-1>',self.remove_field)
+        self.sel_xpath_lbox.bind('<Delete>',self.remove_field)
+        self.sel_xpath_field_name.bind('<Double-1>',self.edit)
+        
+
+        self.update_list()
+
+    def createPerson(self,index,field):
+        def edit():
+            for i in range(len(labels)-1):
+                sel_user_field_list[index] = entries[i].get()
+            print(sel_user_field_list)
+            top.destroy()
+
+        top = Toplevel()
+        labels = ["Old Name : ", "New Name : "]
+        i = 0
+        for text in labels:
+            Label(top, text = text).grid(column = 0, row = i,padx=3,pady=3)
+            i += 1
+        e1 = Entry(top,width=30)
+        e1.insert(0,field)
+        e1.grid(column = 1, row = 1)
+        Button(top, text = "Submit", command = edit).grid(column = 0, row = 2,padx=3,pady=3)
+        entries = [e1]
+        return top
+
+    def edit(self,*args):
+        
+        sel = self.sel_xpath_field_name.curselection()
+        test1=self.sel_xpath_field_name.get(sel[0])
+        if len(sel) > 0:
+            indexToEdit = sel_user_field_list.index((self.sel_xpath_field_name.get(sel[0])))
+            self.sel_xpath_field_name.delete(sel)
+            root.wait_window(self.createPerson(indexToEdit,test1))
+            print(sel_user_field_list[indexToEdit])
+            self.sel_xpath_field_name.insert(sel, sel_user_field_list[indexToEdit])
+
+    def add_field(self,*args):
+        idxs = self.xpath_lbox.curselection()
+        if len(idxs)==1:
+            itema = self.xpath_lbox.get(self.xpath_lbox.curselection())
+            itema_field = self.xpath_field_lbox.get(self.xpath_lbox.curselection())
+            print(itema,itema_field)
+            self.sel_xpath_lbox.insert(END,itema)
+            self.sel_xpath_field_lbox.insert(END,itema_field)
+            self.sel_xpath_field_name.insert(END,itema_field)
+            xpath_list.remove(itema)
+            xpath_field_list.remove(itema_field)
+            sel_field.append(itema)
+            sel_field_list.append(itema_field)
+            sel_user_field_list.append(itema_field)
+            self.update_list()
+        query=find_keys(find_tables(sel_field))
+        self.var.set(query)
+        self.cur_sel.delete(1.0,END)
+        self.cur_sel.insert(INSERT,query)
+        #self.var.set("Last Selected : "+ self.lbox.get(self.lbox.curselection()))
+        
+        #self.cur_sel.delete(1.0,END)
+        #self.cur_sel.insert(INSERT,query)
+
+    def remove_field(self,*args):
+        idxs = self.sel_xpath_lbox.curselection()
+        if len(idxs)==1:
+            itemb = self.sel_xpath_lbox.get(self.sel_xpath_lbox.curselection())
+            itemb_field = self.sel_xpath_field_lbox.get(self.sel_xpath_lbox.curselection())
+            print(itemb,itemb_field)
+            xpath_list.append(itemb)
+            xpath_field_list.append(itemb_field)
+            self.sel_xpath_lbox.delete(idxs)
+            self.sel_xpath_field_lbox.delete(idxs)
+            self.sel_xpath_field_name.delete(idxs)
+            sel_field.remove(itemb)
+            sel_field_list.remove(itemb_field)
+            del sel_user_field_list[idxs[0]]
+            self.update_list()
+
+
+    def update_list(self):
+        search_term = self.search_var.get()
+
+        self.xpath_lbox.delete(0,END)
+        self.xpath_field_lbox.delete(0,END)
+        for idx, val in enumerate(xpath_list):
+            if search_term.lower() in val.lower():
+                self.xpath_lbox.insert(END,xpath_list[idx])
+                self.xpath_field_lbox.insert(END,xpath_field_list[idx])
+        print(sel_field,sel_field_list,sel_user_field_list)
+
+    def OnVsb(self, *args):
+        self.xpath_lbox.yview(*args)
+        self.xpath_field_lbox.yview(*args)
+
+    def OnMouseWheel(self, event):
+        self.xpath_lbox.yview("scroll", event.delta,"units")
+        self.xpath_field_lbox.yview("scroll",event.delta,"units")
+        # this prevents default bindings from firing, which
+        # would end up scrolling the widget twice
+        return "break"    
+
+
+root = Tk()
+root.title("Generic XML Parsing")
+root.configure(background='black')
+app = Application(master=root)
+print("Starting mainloop()")
+app.mainloop() 
